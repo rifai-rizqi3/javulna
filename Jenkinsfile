@@ -3,6 +3,7 @@ pipeline {
     environment {
         DOCKERHUB_CREDENTIALS = credentials('DockerLogin')
         SNYK_CREDENTIALS = credentials('SnykToken')
+        SONARQUBE_CREDENTIALS = credentials('SonarToken')
     }
     stages {
         stage('Secret Scanning Using Trufflehog') {
@@ -75,6 +76,34 @@ pipeline {
                 }
                 sh 'cat trivy-scan-dockerfile-report.json'
                 archiveArtifacts artifacts: 'trivy-scan-dockerfile-report.json'
+            }
+        }
+        stage('SAST Snyk') {
+            agent {
+              docker {
+                  image 'snyk/snyk:node'
+                  args '-u root --network host --env SNYK_TOKEN=$SNYK_CREDENTIALS_PSW --entrypoint='
+              }
+            }
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                    sh 'snyk code test --json > snyk-sast-report.json'
+                }
+                sh 'cat snyk-scan-report.json'
+                archiveArtifacts artifacts: 'snyk-sast-report.json'
+            }
+        }
+        stage('SAST SonarQube') {
+            agent {
+              docker {
+                    image 'maven:3.9.4-eclipse-temurin-17-alpine'
+                    args '-u root --network host'
+              }
+            }
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                    sh 'mvn sonar:sonar -Dsonar.token=$SONARQUBE_CREDENTIALS_PSW -Dsonar.projectKey=javulna -Dsonar.qualitygate.wait=true -Dsonar.host.url=http://localhost:9000' 
+                }
             }
         }
         stage('Build Docker Image and Push to Docker Registry') {
