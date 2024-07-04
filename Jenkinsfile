@@ -135,5 +135,37 @@ pipeline {
                 }
             }
         }
+        stage('DAST Nuclei') {
+            agent {
+                docker {
+                    image 'projectdiscovery/nuclei'
+                    args '--user root --network host --entrypoint='
+                }
+            }
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                    sh 'nuclei -u http://192.168.0.110:8090 -nc -j > nuclei-report.json'
+                    sh 'cat nuclei-report.json'
+                }
+                archiveArtifacts artifacts: 'nuclei-report.json'
+            }
+        }
+        stage('DAST OWASP ZAP') {
+            agent {
+                docker {
+                    image 'ghcr.io/zaproxy/zaproxy:weekly'
+                    args '-u root --network host -v /var/run/docker.sock:/var/run/docker.sock --entrypoint= -v .:/zap/wrk/:rw'
+                }
+            }
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                    sh 'zap-api-scan.py -t doc/javulna.yaml -f openapi -r zapapiscan.html -x zapapiscan.xml'
+                }
+                sh 'cp /zap/wrk/zapbaseline.html ./zapapiscan.html'
+                sh 'cp /zap/wrk/zapbaseline.xml ./zapapiscan.xml'
+                archiveArtifacts artifacts: 'zapapiscan.html'
+                archiveArtifacts artifacts: 'zapapiscan.xml'
+            }
+        }
     }
 }
